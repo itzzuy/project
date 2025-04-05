@@ -3,6 +3,7 @@
 #include <WS2tcpip.h>
 #include <thread>
 #include <vector>
+#include <mutex>
 #include "device.h"
 #include "protocol.h"
 
@@ -12,9 +13,34 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+std::mutex deviceMutex; // protects shared device data
+std::map<std::string, Device> devices;
+
 void error_exit(const char* message) {
 	std::cerr << message << "Error Code: " << WSAGetLastError() << std::endl;
 	exit(EXIT_FAILURE);
+}
+
+void handleClient(SOCKET clientSocket) {
+	char buffer[BUFFER_SIZE];
+	while (true) {
+		int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE - 1, 0);
+		if (bytesReceived <= 0) {
+			break; // Client disconnected
+		}
+		buffer[bytesReceived] = '\0';
+		std::string command(buffer);
+
+		std::string response;
+		{
+			std::lock_guard<std::mutex> lock(deviceMutex);
+			response = processCmd(command, devices); // process command
+		}
+		send(clientSocket, response.c_str(), response.length(), 0);
+		std::cout << "Command: " << command << " | Response: " << response;
+	}
+	closesocket(clientSocket);
+	std::cout << "Client disconnected." << std::endl;
 }
 
 int main() {
@@ -51,7 +77,9 @@ int main() {
 
 	listen(serverSocket, 5);
 	std::cout << "Listening on port " << PORT << "...." << std::endl;
-
+	
+	initializeDevices(devices);
+	std::vector<std::thread> threads;
 	while (true) {
 		// Accept client connection
 		clientSocket = accept(serverSocket, (sockaddr*)&clientAddr, &clientLen);
@@ -63,24 +91,10 @@ int main() {
 		}
 		std::cout << "Accepted from client is successful!!" << std::endl;
 
-		int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE - 1, 0);
-		if (bytesReceived > 0) {
-			buffer[bytesReceived] = '\0';
-			std::cout << "Message received from client: " << buffer << std::endl;
-
-			// Send a response back to the client
-			std::string response = "Hello from server!";
-			if (send(clientSocket, response.c_str(), response.size(), 0) == SOCKET_ERROR) {
-				std::cerr << "Failed to send message to client" << std::endl;
-			}
-			else {
-				std::cout << "Message sent to client: " << response << std::endl;
-			}
-		}
-		else {
-			std::cerr << "Failed to receive message from client" << std::endl;
-		}
+		threads.push_back(std::thread(handleClient, clientSocket));
 	}
+
+	for (auto& t : threads) t.join();
 
 	closesocket(serverSocket);
 	WSACleanup();

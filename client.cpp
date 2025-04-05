@@ -10,7 +10,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 void error_exit(const char* message) {
-    std::cerr << message << "Error Code: " << WSAGetLastError() << std::endl;
+    std::cerr << message << " Error Code: " << WSAGetLastError() << std::endl;
     WSACleanup();
     std::cout << "Press Enter to exit..." << std::endl;
     std::cin.get();
@@ -45,27 +45,23 @@ int main() {
     if (connect(clientSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
         error_exit("Connection failed");
     }
-    std::cout << "Connected to server!" << std::endl;
-
-    std::string message = "Hello from client!";
-    if (send(clientSocket, message.c_str(), message.size(), 0) == SOCKET_ERROR) {
-        error_exit("Send failed");
-    }
-    std::cout << "Message sent to server: " << message << std::endl;
-
-    // Receive a message from the server
-    int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE - 1, 0);
-    if (bytesReceived > 0) {
-        buffer[bytesReceived] = '\0';
-        std::cout << "Message received from server: " << buffer << std::endl;
-    }
-    else {
-        std::cerr << "Failed to receive message from server" << std::endl;
-    }
 
     std::cout << "Connected to server!" << std::endl;
-    std::cout << "Press Enter to exit..." << std::endl;
-    std::cin.get();
+
+    std::string command;
+    while (true) {
+        std::cout << "Enter command (or 'exit' to quit): ";
+        std::getline(std::cin, command);
+        if (command == "exit") break;
+
+        send(clientSocket, command.c_str(), command.length(), 0);
+
+        int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE - 1, 0);
+        if (bytesReceived > 0) {
+            buffer[bytesReceived] = '\0';
+            std::cout << "Server response: " << buffer << std::endl;
+        }
+    }
 
     closesocket(clientSocket);
     WSACleanup();
